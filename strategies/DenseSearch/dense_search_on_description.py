@@ -16,8 +16,10 @@ class DenseSearch:
 
       embedding_texts = (
             "Name: " + corpus["item_name"].astype(str)
+            + ". Menu Category: " + corpus["menu_category"].astype(str)
             + ". Type: " + corpus["item_type"].astype(str)
             + ". Cuisine: " + corpus["cuisine"].astype(str)
+            + ". Restaurant: " + corpus["restaurant_name"].astype(str)
             + ". Description: " + corpus["item_description"].astype(str)
       ).tolist()
 

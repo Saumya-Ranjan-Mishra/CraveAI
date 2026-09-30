@@ -13,13 +13,12 @@ from ranking_utils import rrf
 from strategies.BM25.item_name_search_strategy import ItemNameSearchStrategy
 from strategies.DenseSearch.dense_search_on_description import DenseSearch
 
-
 PROJECT_DIR = Path(__file__).parent
 ITEM_DATA_DIR = PROJECT_DIR / "data"
 QUERY_DATA_PATH = ITEM_DATA_DIR / "user_queries_with_history_and_clicks.csv"
 REPORT_DIR = PROJECT_DIR / "evaluation_results"
 DEFAULT_QUERY_LIMIT = 100
-DEFAULT_K = 10
+DEFAULT_K = 100
 items_by_id = pd.read_csv(ITEM_DATA_DIR / "items.csv").set_index("item_id")
 
 def parse_item_ids(value: str | list[str] | None) -> list[str]:
