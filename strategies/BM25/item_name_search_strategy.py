@@ -19,8 +19,7 @@ class ItemNameSearchStrategy:
     retriever = bm25s.BM25()
     retriever.index(tokens)
 
-    if not Path.exists(INDEX_DIR):
-      INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
     retriever.save(str(item_names_index_path))
     (item_names_index_path / "items_name_id_mapping.txt").write_text("\n".join(items_ids))
@@ -35,6 +34,9 @@ class ItemNameSearchStrategy:
     return retriever, item_ids
 
   def bm25_search_on_item_name(self, query: str, k: int = 10) -> List[str]:
+
+    if not (INDEX_DIR / "item_names").exists():
+      self.create_index_on_item_name()
 
     retriever, item_ids = self.load_item_name_indexes()
 

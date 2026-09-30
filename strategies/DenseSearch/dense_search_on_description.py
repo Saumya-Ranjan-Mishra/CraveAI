@@ -14,9 +14,20 @@ class DenseSearch:
     if not self.item_desc_embeddings_path.exists():
       corpus = pd.read_csv(self.item_list_path)
 
+      embedding_texts = (
+            "Name: " + corpus["item_name"].astype(str)
+            + ". Type: " + corpus["item_type"].astype(str)
+            + ". Cuisine: " + corpus["cuisine"].astype(str)
+            + ". Description: " + corpus["item_description"].astype(str)
+      ).tolist()
+
+      # descriptions = corpus["item_description"].fillna("").astype(str).str.strip()
+      # item_names = corpus["item_name"].fillna("").astype(str).str.strip()
+      # embedding_texts = descriptions.where(descriptions.ne(""), item_names).tolist()
+
       print("Creating vector embeddings for item descriptions")
       self.item_desc_embeddings_path.parent.mkdir(parents=True, exist_ok=True)
-      doc_embeddings = self.embedding_model_obj.get_sentence_emdeddings(corpus["item_description"].tolist())
+      doc_embeddings = self.embedding_model_obj.get_sentence_emdeddings(embedding_texts)
 
       np.save(self.item_desc_embeddings_path, doc_embeddings)
 

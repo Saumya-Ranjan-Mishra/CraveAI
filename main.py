@@ -19,8 +19,8 @@ ITEM_DATA_DIR = PROJECT_DIR / "data"
 QUERY_DATA_PATH = ITEM_DATA_DIR / "user_queries_with_history_and_clicks.csv"
 REPORT_DIR = PROJECT_DIR / "evaluation_results"
 DEFAULT_QUERY_LIMIT = 100
-DEFAULT_K = 100
-
+DEFAULT_K = 10
+items_by_id = pd.read_csv(ITEM_DATA_DIR / "items.csv").set_index("item_id")
 
 def parse_item_ids(value: str | list[str] | None) -> list[str]:
     if isinstance(value, list):
