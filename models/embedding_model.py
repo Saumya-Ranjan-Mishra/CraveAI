@@ -45,7 +45,7 @@ class EmbeddingModel:
       token_embeddings = model_output[0]
 
       sentence_embeddings = self.mean_polling(token_embeddings, tokenizer_output["attention_mask"])
-      print("sentense embedding shape", sentence_embeddings.shape)
+      #print("sentense embedding shape", sentence_embeddings.shape)
 
       ## Normalize the final embedding so that we can calculate the cosine simlarity.
       norms = np.linalg.norm(sentence_embeddings, axis=1, keepdims=True)

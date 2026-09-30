@@ -13,6 +13,7 @@ class DenseSearch:
   def create_vector_index(self):
     if not self.item_desc_embeddings_path.exists():
       corpus = pd.read_csv(self.item_list_path)
+
       print("Creating vector embeddings for item descriptions")
       self.item_desc_embeddings_path.parent.mkdir(parents=True, exist_ok=True)
       doc_embeddings = self.embedding_model_obj.get_sentence_emdeddings(corpus["item_description"].tolist())
