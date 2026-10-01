@@ -8,13 +8,12 @@ ITEM_DATA_DIR = Path(__file__).parent.parent.parent / "data"
 ITEM_DESC_INDEX_PATH = Path(__file__).parent.parent.parent / "indexes" / "item_description"
 ITEM_ID_MAPPING_PATH = ITEM_DESC_INDEX_PATH / "item_id_description_mapping.txt"
 
-items_data = pd.read_csv(ITEM_DATA_DIR / "items.csv")
 class ItemDescriptionSearchStrategy:
-
+  items_data = pd.read_csv(ITEM_DATA_DIR / "items.csv")
 
   def create_index_for_item_description(self):
-    item_ids = items_data["item_id"]
-    item_desc = items_data["item_description"]
+    item_ids = self.items_data["item_id"]
+    item_desc = self.items_data["item_description"]
 
     tokens = bm25s.tokenize(item_desc, stopwords="en")
     retriever = bm25s.BM25()

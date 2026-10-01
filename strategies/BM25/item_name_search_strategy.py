@@ -7,14 +7,14 @@ DATA_DIR = Path(__file__).parent.parent.parent / "data"
 INDEX_DIR = Path(__file__).parent.parent.parent / "indexes"
 items_corpus_path = DATA_DIR / "items.csv"
 restaurant_corpus_path = DATA_DIR / "restaurants.csv"
-items_data =  pd.read_csv(items_corpus_path)
 
 class ItemNameSearchStrategy:
+  items_data =  pd.read_csv(items_corpus_path)
 
   def create_index_on_item_name(self):
     item_names_index_path = INDEX_DIR/ "item_names"
-    items_ids =  items_data["item_id"]
-    item_names = items_data["item_name"]
+    items_ids =  self.items_data["item_id"]
+    item_names = self.items_data["item_name"]
     tokens = bm25s.tokenize(item_names, stopwords="en")
     retriever = bm25s.BM25()
     retriever.index(tokens)

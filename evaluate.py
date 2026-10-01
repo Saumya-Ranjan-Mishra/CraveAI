@@ -2,11 +2,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 import os
+import re
 from pathlib import Path
 import time
 
+import numpy as np
 import pandas as pd
 import psutil
+import xgboost as xgb
 
 from evaluation_utils import hit_rate, recall, rr, precision
 from ranking_utils import rrf
@@ -17,9 +20,13 @@ PROJECT_DIR = Path(__file__).parent
 ITEM_DATA_DIR = PROJECT_DIR / "data"
 QUERY_DATA_PATH = ITEM_DATA_DIR / "user_queries_with_history_and_clicks.csv"
 REPORT_DIR = PROJECT_DIR / "evaluation_results"
+MODEL_PATH = PROJECT_DIR / "indexes" / "xgboost_reranker_model" / "crave_ai_xgb_reranker.json"
 DEFAULT_QUERY_LIMIT = 100
-DEFAULT_K = 100
-items_by_id = pd.read_csv(ITEM_DATA_DIR / "items.csv").set_index("item_id")
+DEFAULT_K = 10
+
+items_df = pd.read_csv(ITEM_DATA_DIR / "items.csv").fillna("")
+items_by_id = items_df.set_index("item_id")
+item_lookup = items_df.set_index("item_id").to_dict(orient="index")
 
 def parse_item_ids(value: str | list[str] | None) -> list[str]:
     if isinstance(value, list):
@@ -37,24 +44,104 @@ def get_dense_search_results(strategy: DenseSearch, query: str, k: int) -> list[
     return strategy.dense_search_on_item_desc(query, k)
 
 
+def compute_token_overlap(query: str, text: str) -> float:
+    if not isinstance(text, str) or not text.strip():
+        return 0.0
+    q_tokens = set(re.findall(r'\w+', query.lower()))
+    t_tokens = set(re.findall(r'\w+', text.lower()))
+    if not q_tokens:
+        return 0.0
+    return len(q_tokens.intersection(t_tokens)) / len(q_tokens)
+
+
+def rerank_with_xgboost(
+    query: str,
+    candidate_ids: list[str],
+    xgb_model: xgb.Booster,
+    dense_strategy: DenseSearch,
+) -> list[str]:
+    if not candidate_ids:
+        return []
+
+    if not hasattr(dense_strategy, "_cached_embeddings"):
+        dense_strategy._cached_embeddings = np.load(dense_strategy.item_desc_embeddings_path)
+        dense_strategy._id_to_idx = {
+            iid: idx for idx, iid in enumerate(pd.read_csv(dense_strategy.item_list_path)["item_id"])
+        }
+    doc_embeddings = dense_strategy._cached_embeddings
+    id_to_idx = dense_strategy._id_to_idx
+    query_vector = dense_strategy.embedding_model_obj.get_sentence_emdeddings([query])[0]
+
+    features_list = []
+    for rank, item_id in enumerate(candidate_ids):
+        item_info = item_lookup.get(item_id, {})
+        idx = id_to_idx.get(item_id)
+        dense_score = float(doc_embeddings[idx] @ query_vector) if idx is not None else 0.0
+
+        name_overlap = compute_token_overlap(query, str(item_info.get("item_name", "")))
+        cat_overlap = compute_token_overlap(query, str(item_info.get("menu_category", "")))
+        desc_overlap = compute_token_overlap(query, str(item_info.get("item_description", "")))
+
+        try:
+            rating = float(item_info.get("item_rating", 4.0))
+        except (ValueError, TypeError):
+            rating = 4.0
+
+        features_list.append({
+            "dense_score": dense_score,
+            "name_token_overlap": name_overlap,
+            "category_token_overlap": cat_overlap,
+            "desc_token_overlap": desc_overlap,
+            "candidate_rank": rank + 1,
+            "item_rating": rating,
+        })
+
+    feature_cols = [
+        "dense_score",
+        "name_token_overlap",
+        "category_token_overlap",
+        "desc_token_overlap",
+        "candidate_rank",
+        "item_rating",
+    ]
+    df_feat = pd.DataFrame(features_list)[feature_cols]
+    dmat = xgb.DMatrix(df_feat)
+    preds = xgb_model.predict(dmat)
+
+    # Sort candidates by descending XGBoost predicted score
+    reranked_pairs = sorted(zip(candidate_ids, preds), key=lambda x: x[1], reverse=True)
+    return [item_id for item_id, _ in reranked_pairs]
+
+
 def retrieve_rankings(query: str, keyword_search_strategy: ItemNameSearchStrategy, dense_search_strategy: DenseSearch,
-    executor: ThreadPoolExecutor, k: int) -> dict[str, list[str]]:
+    xgb_model: xgb.Booster | None, executor: ThreadPoolExecutor, k: int) -> dict[str, list[str]]:
+    candidate_pool_size = max(k, 50)
     keyword_future = executor.submit(
-        get_bm25_search_results, keyword_search_strategy, query, k
+        get_bm25_search_results, keyword_search_strategy, query, candidate_pool_size
     )
     dense_future = executor.submit(
-        get_dense_search_results, dense_search_strategy, query, k
+        get_dense_search_results, dense_search_strategy, query, candidate_pool_size
     )
     keyword_results = keyword_future.result()
     dense_results = dense_future.result()
 
-    return {
-        "BM25": keyword_results,
-        "Dense": dense_results,
-        "Fused": rrf.reciprocal_rank_fusion(
-            [keyword_results, dense_results], top_k=k
-        ),
+    # RRF fusion
+    fused_pairs = rrf.reciprocal_rank_fusion(
+        [keyword_results, dense_results], top_k=candidate_pool_size
+    )
+    fused_ids = [item_id for item_id, _ in fused_pairs]
+
+    rankings = {
+        "BM25": keyword_results[:k],
+        "Dense": dense_results[:k],
+        "Fused": fused_ids[:k],
     }
+
+    if xgb_model is not None:
+        xgb_reranked = rerank_with_xgboost(query, fused_ids, xgb_model, dense_search_strategy)
+        rankings["XGB_Reranked"] = xgb_reranked[:k]
+
+    return rankings
 
 
 def score_ranking(ranked_ids: list[str], relevant_ids: list[str], k: int) -> dict[str, float | None]:
@@ -78,6 +165,15 @@ def evaluate_queries(queries: pd.DataFrame, query_limit: int, k: int) -> tuple[p
     selected_queries = queries.head(query_limit)
     keyword_search_strategy = ItemNameSearchStrategy()
     dense_search_strategy = DenseSearch()
+
+    xgb_model = None
+    if MODEL_PATH.exists():
+        xgb_model = xgb.Booster()
+        xgb_model.load_model(str(MODEL_PATH))
+        print(f"Loaded trained XGBoost model from {MODEL_PATH}")
+    else:
+        print(f"XGBoost model file not found at {MODEL_PATH}, skipping reranking.")
+
     detail_rows = []
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -88,6 +184,7 @@ def evaluate_queries(queries: pd.DataFrame, query_limit: int, k: int) -> tuple[p
                 query.query_string,
                 keyword_search_strategy,
                 dense_search_strategy,
+                xgb_model,
                 executor,
                 k,
             )
