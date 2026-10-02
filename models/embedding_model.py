@@ -1,19 +1,27 @@
 from tokenizers import Tokenizer
 import onnxruntime as ort
 import numpy as np
-import pandas as pd
+import os
 from pathlib import Path
 
 class EmbeddingModel:
   def __init__(self):
-    self.item_list_path = Path(__file__).parent.parent.parent / "data" / "items.csv"
-    self.item_desc_embeddings_path = Path(__file__).parent.parent.parent / "indexes" / "item_desc_embeddings" / "embeddings.npy"
+    tokenizer_path = Path(os.environ.get("CRAVEAI_TOKENIZER_PATH", r"C:\Users\A1134913\Downloads\tokenizer.json"))
+    model_path = Path(os.environ.get("CRAVEAI_ONNX_MODEL_PATH", r"C:\Users\A1134913\Downloads\embedding_model.onnx"))
 
-    self.tokenizer = Tokenizer.from_file(r"C:\Users\A1134913\Downloads\tokenizer.json")
+    self.tokenizer = Tokenizer.from_file(str(tokenizer_path))
     self.tokenizer.enable_padding()
     self.tokenizer.enable_truncation(max_length=512)
 
-    self.embedding_inference_session = ort.InferenceSession(r"C:\Users\A1134913\Downloads\embedding_model.onnx", providers=["CPUExecutionProvider"])
+    session_options = ort.SessionOptions()
+    session_options.intra_op_num_threads = int(os.environ.get("CRAVEAI_ORT_INTRA_OP_THREADS", "1"))
+    session_options.inter_op_num_threads = int(os.environ.get("CRAVEAI_ORT_INTER_OP_THREADS", "1"))
+    session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    self.embedding_inference_session = ort.InferenceSession(
+      str(model_path),
+      sess_options=session_options,
+      providers=["CPUExecutionProvider"],
+    )
 
     self.model_inputs = [inp.name for inp in self.embedding_inference_session.get_inputs()]
     self.model_outputs = [inp.name for inp in self.embedding_inference_session.get_outputs()]
