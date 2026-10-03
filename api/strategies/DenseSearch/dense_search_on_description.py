@@ -3,8 +3,8 @@ import os
 import pandas as pd
 from pathlib import Path
 from typing import List
-from models import embedding_model
-from models.item_text import build_item_search_text
+from api.models import embedding_model
+from api.models.item_text import build_item_search_text
 
 class DenseSearch:
   def __init__(self):

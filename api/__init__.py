@@ -1,0 +1,1 @@
+"""CraveAI backend application package."""

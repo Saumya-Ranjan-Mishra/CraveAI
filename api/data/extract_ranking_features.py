@@ -3,8 +3,8 @@ import re
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from models import embedding_model
-from models.item_text import build_item_search_text
+from api.models import embedding_model
+from api.models.item_text import build_item_search_text
 
 query_csv = Path(__file__).parent / "user_queries_with_history_and_clicks.csv"
 items_csv = Path(__file__).parent / "items.csv"

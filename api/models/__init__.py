@@ -1,0 +1,1 @@
+"""Embedding model and shared item text utilities."""

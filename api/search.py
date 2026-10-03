@@ -1,9 +1,9 @@
 import pandas as pd
 import json
 import os
-from ranking_utils import rrf, xgb_reranking
-from strategies.BM25.item_name_search_strategy import ItemNameSearchStrategy
-from strategies.DenseSearch.dense_search_on_description import DenseSearch
+from api.ranking_utils import rrf, xgb_reranking
+from api.strategies.BM25.item_name_search_strategy import ItemNameSearchStrategy
+from api.strategies.DenseSearch.dense_search_on_description import DenseSearch
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 

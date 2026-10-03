@@ -11,10 +11,10 @@ import pandas as pd
 import psutil
 import xgboost as xgb
 
-from evaluation_utils import hit_rate, recall, rr, precision
-from ranking_utils import rrf
-from strategies.BM25.item_name_search_strategy import ItemNameSearchStrategy
-from strategies.DenseSearch.dense_search_on_description import DenseSearch
+from api.evaluation_utils import hit_rate, recall, rr, precision
+from api.ranking_utils import rrf
+from api.strategies.BM25.item_name_search_strategy import ItemNameSearchStrategy
+from api.strategies.DenseSearch.dense_search_on_description import DenseSearch
 
 PROJECT_DIR = Path(__file__).parent
 ITEM_DATA_DIR = PROJECT_DIR / "data"
