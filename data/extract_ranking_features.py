@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from models import embedding_model
+from models.item_text import build_item_search_text
 
 query_csv = Path(__file__).parent / "user_queries_with_history_and_clicks.csv"
 items_csv = Path(__file__).parent / "items.csv"
@@ -29,23 +30,12 @@ def extract_features_for_reranking(
   df_items = pd.read_csv(items_csv).fillna('')
 
   # Create rich document string for items (incorporating name, category, restaurant)
-  df_items['search_doc'] = (
-      'Item: '
-      + df_items['item_name']
-      + ' | Category: '
-      + df_items['menu_category']
-      + ' | Restaurant: '
-      + df_items['restaurant_name']
-      + ' | Desc: '
-      + df_items['item_description']
-  )
+  df_items['search_doc'] = build_item_search_text(df_items)
 
   item_lookup = df_items.set_index('item_id').to_dict(orient='index')
   all_item_ids = df_items['item_id'].tolist()
 
-  print(
-      f'Initializing sentence transformer model for dense candidate scoring...'
-  )
+  print('Initializing embedding model for dense candidate scoring...')
   model = embedding_model.EmbeddingModel()
   item_embeddings = model.get_sentence_emdeddings(df_items['search_doc'].tolist())
 

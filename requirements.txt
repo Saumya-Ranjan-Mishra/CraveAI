@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+numpy
+pandas
+bm25s
+onnxruntime
+tokenizers
+xgboost
