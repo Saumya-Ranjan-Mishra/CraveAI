@@ -6,8 +6,8 @@ from pathlib import Path
 
 class EmbeddingModel:
   def __init__(self):
-    tokenizer_path = Path(os.environ.get("CRAVEAI_TOKENIZER_PATH", r"C:\Users\A1134913\Downloads\tokenizer.json"))
-    model_path = Path(os.environ.get("CRAVEAI_ONNX_MODEL_PATH", r"C:\Users\A1134913\Downloads\embedding_model.onnx"))
+    tokenizer_path = Path(os.environ.get("CRAVEAI_TOKENIZER_PATH"))
+    model_path = Path(os.environ.get("CRAVEAI_ONNX_MODEL_PATH"))
 
     self.tokenizer = Tokenizer.from_file(str(tokenizer_path))
     self.tokenizer.enable_padding()

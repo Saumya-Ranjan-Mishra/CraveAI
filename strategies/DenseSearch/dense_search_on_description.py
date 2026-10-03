@@ -12,7 +12,7 @@ class DenseSearch:
     data_dir = Path(os.environ.get("CRAVEAI_DATA_DIR", project_dir / "data"))
     index_dir = Path(os.environ.get("CRAVEAI_INDEX_DIR", project_dir / "indexes"))
     self.item_list_path = data_dir / "items.csv"
-    self.item_desc_embeddings_path = index_dir / "item_desc_embeddings" / "embeddings.search-text-v1.npy"
+    self.item_desc_embeddings_path = index_dir / "item_desc_embeddings" / "embeddings.npy"
     self.embedding_model_obj = embedding_model.EmbeddingModel()
     self.items_data = pd.read_csv(self.item_list_path).fillna("")
     self.item_ids = self.items_data["item_id"].astype(str).tolist()
