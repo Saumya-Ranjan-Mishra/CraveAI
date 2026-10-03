@@ -29,16 +29,16 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: api/requirements.txt
 
       - name: Install Python dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && python -m pip install -r api/requirements.txt
 
       - name: Compile Python modules
-        run: python -m compileall -q api.py search.py data evaluation_utils models ranking_utils strategies
+        run: python -m compileall -q api
 
       - name: Verify API imports
-        run: python -c "import api; print(api.app.title)"
+        run: python -c "from api.app import app; print(app.title)"
 
   publish-image:
     name: Publish image to GHCR
@@ -74,8 +74,8 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./api
+          file: Dockerfile
           platforms: linux/amd64
           push: true
           build-args: |

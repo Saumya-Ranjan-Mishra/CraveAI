@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from search import FoodSearchService, MAX_TOP_K
+from api.search import FoodSearchService, MAX_TOP_K
 
 
 @asynccontextmanager

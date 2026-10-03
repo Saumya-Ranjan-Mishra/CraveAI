@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 import bm25s
-from models import SearchResult
+from api.dtos.search_result import SearchResult
 from typing import List
 
 ITEM_DATA_DIR = Path(__file__).parent.parent.parent / "data" 

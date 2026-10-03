@@ -2,7 +2,7 @@ import xgboost as xgb
 import pandas as pd
 import os
 from pathlib import Path
-from data import extract_ranking_features
+from api.data import extract_ranking_features
 from pandas import DataFrame
 
 xgb_trained_model_path = Path(os.environ.get("CRAVEAI_RERANKER_PATH", 
