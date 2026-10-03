@@ -1,0 +1,220 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: craveai-search
+  annotations:
+    azure.workload.identity/client-id: "ac6ffb7b-c73a-4797-9cfa-1cbe44b69d37"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: craveai-search-data
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - -o allow_other
+  csi:
+    driver: blob.csi.azure.com
+    volumeHandle: "craveAI#craveai#data"
+    readOnly: true
+    volumeAttributes:
+      containerName: data
+      storageaccount: "craveai"
+      clientID: "ac6ffb7b-c73a-4797-9cfa-1cbe44b69d37"
+      protocol: fuse
+      mountWithWorkloadIdentityToken: "true"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: craveai-search-indexes
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - -o allow_other
+  csi:
+    driver: blob.csi.azure.com
+    volumeHandle: "craveAI#craveai#indexes"
+    readOnly: true
+    volumeAttributes:
+      containerName: indexes
+      storageaccount: "craveai"
+      clientID: "ac6ffb7b-c73a-4797-9cfa-1cbe44b69d37"
+      protocol: fuse
+      mountWithWorkloadIdentityToken: "true"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: craveai-search-models
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - -o allow_other
+  csi:
+    driver: blob.csi.azure.com
+    volumeHandle: "craveAI#craveai#models"
+    readOnly: true
+    volumeAttributes:
+      containerName: models
+      storageaccount: "craveai"
+      clientID: "ac6ffb7b-c73a-4797-9cfa-1cbe44b69d37"
+      protocol: fuse
+      mountWithWorkloadIdentityToken: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: craveai-search-data
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: craveai-search-data
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: craveai-search-indexes
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: craveai-search-indexes
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: craveai-search-models
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: craveai-search-models
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: craveai-search
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: craveai-search
+  template:
+    metadata:
+      labels:
+        app: craveai-search
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: craveai-search
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: ghcr.io/saumya-ranjan-mishra/craveai-search:sha-89bca83341717751ff0c26504c218c78b3e8a867
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: CRAVEAI_DATA_DIR
+              value: /mnt/search-assets/data
+            - name: CRAVEAI_INDEX_DIR
+              value: /mnt/search-assets/indexes
+            - name: CRAVEAI_TOKENIZER_PATH
+              value: /mnt/search-assets/models/tokenizer.json
+            - name: CRAVEAI_ONNX_MODEL_PATH
+              value: /mnt/search-assets/models/embedding_model.onnx
+            - name: CRAVEAI_RERANKER_PATH
+              value: /mnt/search-assets/indexes/xgboost_reranker_model/crave_ai_xgb_reranker.json
+            - name: CRAVEAI_ORT_INTRA_OP_THREADS
+              value: "2"
+            - name: CRAVEAI_ORT_INTER_OP_THREADS
+              value: "1"
+          volumeMounts:
+            - name: search-data
+              mountPath: /mnt/search-assets/data
+              readOnly: true
+            - name: search-indexes
+              mountPath: /mnt/search-assets/indexes
+              readOnly: true
+            - name: search-models
+              mountPath: /mnt/search-assets/models
+              readOnly: true
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: search-data
+          persistentVolumeClaim:
+            claimName: craveai-search-data
+        - name: search-indexes
+          persistentVolumeClaim:
+            claimName: craveai-search-indexes
+        - name: search-models
+          persistentVolumeClaim:
+            claimName: craveai-search-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: craveai-search
+spec:
+  type: ClusterIP
+  selector:
+    app: craveai-search
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
