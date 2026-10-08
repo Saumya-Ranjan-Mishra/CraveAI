@@ -6,3 +6,4 @@ bm25s
 onnxruntime
 tokenizers
 xgboost
+psutil

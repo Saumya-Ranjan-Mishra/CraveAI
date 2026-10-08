@@ -22,7 +22,7 @@ QUERY_DATA_PATH = ITEM_DATA_DIR / "user_queries_with_history_and_clicks.csv"
 REPORT_DIR = PROJECT_DIR / "evaluation_results"
 MODEL_PATH = PROJECT_DIR / "indexes" / "xgboost_reranker_model" / "crave_ai_xgb_reranker.json"
 DEFAULT_QUERY_LIMIT = 100
-DEFAULT_K = 10
+DEFAULT_K = 20
 
 items_df = pd.read_csv(ITEM_DATA_DIR / "items.csv").fillna("")
 items_by_id = items_df.set_index("item_id")

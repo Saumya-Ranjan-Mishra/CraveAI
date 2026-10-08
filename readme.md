@@ -1,61 +1,138 @@
-## Metrics Used for Offline Evaluation
+# CraveAI Food Search
 
-We evaluate three rankings: BM25, dense retrieval, and Reciprocal Rank Fusion (RRF). Each ranking is compared against two separate relevance signals:
+CraveAI is an end-to-end food-search application combining lexical retrieval, semantic embeddings, reciprocal rank fusion, and a learned XGBoost reranker. It includes a FastAPI backend, a React and TypeScript UI, containerized services, and Kubernetes deployment manifests.
 
-- **Related items** (`response_item_ids`): the dataset's known related-item labels.
-- **User clicks** (`clicked_item_ids`): items with recorded user clicks.
+## Contents
 
-These signals answer different questions, so we report them separately. A click is positive behavioral evidence, but an unclicked item is not necessarily irrelevant; it may not have been shown or chosen.
+- [Results at a Glance](#results-at-a-glance)
+- [Hybrid Search Architecture](#hybrid-search-architecture)
+- [XGBoost Learning-to-Rank](#xgboost-learning-to-rank)
+- [Evaluation Methodology](#evaluation-methodology)
+- [Search Experiments and Results](#search-experiments-and-results)
+- [Iteration 1: Semantic Baseline](#iteration-1-semantic-baseline)
+- [Iteration 2: Context-Enriched Embeddings](#iteration-2-context-enriched-embeddings)
+- [Iteration 3: XGBoost Reranking](#iteration-3-xgboost-reranking)
+- [XGBoost Ranking Results](#xgboost-ranking-results)
+- [Application and Deployment Architecture](#application-and-deployment-architecture)
 
-### Metrics
+## Results at a Glance
 
-All metrics use a cutoff `K`, meaning they evaluate only the first K results. The cutoff should reflect the product surface being evaluated. For example, use `K=10` to evaluate the first page of results. A larger cutoff such as `K=100` is useful for measuring deeper retrieval, but does not describe first-page quality.
+- Built a hybrid retrieval pipeline that combines BM25 item-name search with dense semantic search, then fuses candidates with RRF.
+- Trained and integrated an XGBoost learning-to-rank model to reorder candidates using query-item relevance features.
+- In offline evaluation on 100 queries at `K=20`, improved related-item MRR from **35.44% with RRF to 85.93%** with XGBoost reranking; related-item Hit Rate increased from **79% to 90%**.
+- Against user-click labels, improved MRR from **21.44% to 51.50%**, Hit Rate from **67% to 77%**, and Recall from **46.03% to 60.00%**.
+- Packaged the API and UI as separate container images, with GitHub Actions workflows for GHCR publishing and Kubernetes manifests for deployment.
 
-- **Hit Rate@K**: The fraction of labeled queries for which at least one relevant item appears in the top K. A query contributes 1 if there is a hit and 0 otherwise. For example, Hit Rate@10 of 0.76 means at least one labeled relevant item appeared in the first 10 results for 76% of labeled queries. It does not measure how many relevant items appeared.
+The results are from offline evaluation; related-item labels and recorded user clicks are reported as separate relevance signals. The sections below describe the search pipeline, model training, evaluation approach, and experiment history.
 
-- **MRR@K (Mean Reciprocal Rank)**: The average reciprocal rank of the first relevant result. If the first relevant result is at rank `r`, that query contributes `1/r`; if no relevant result appears in the top K, it contributes 0. MRR rewards placing the first relevant result near the top, but ignores other relevant results after it.
+## Hybrid Search Architecture
 
-- **Recall@K**: The fraction of all labeled relevant items retrieved in the top K:
+1. **BM25 retrieval** finds candidates with strong lexical matches to item names.
+2. **Dense retrieval** compares the query embedding with embeddings of menu item text.
+3. **Reciprocal Rank Fusion (RRF)** combines the two candidate rankings.
+4. **XGBoost learning-to-rank** scores and reorders the fused candidates.
+5. The FastAPI service returns the top results to the React UI.
 
-  `Recall@K = relevant items in top K / all labeled relevant items`
+The embedding text combines item name, menu category, restaurant name, and item description. The embedding model runs through ONNX Runtime; data, indexes, tokenizer, and model paths can be configured for local use or mounted runtime assets.
 
-  Queries with many relevant items can have low Recall@K even when many top results are valid. For example, retrieving 10 relevant items from a set of 400 gives Recall@10 of 0.025. We therefore interpret recall in light of the number and completeness of the labels.
+## XGBoost Learning-to-Rank
 
-- **Precision@K**: The fraction of the first K returned results that are labeled relevant:
+The current reranker is an XGBoost LambdaMART-style model using the `rank:ndcg` objective. Training examples are organized into query groups, allowing the model to learn how to order candidates for each query. The current feature-generation workflow creates up to 50 dense-retrieval candidates per query and assigns a binary relevance label from the dataset's `response_item_ids`.
 
-  `Precision@K = relevant results in top K / number of results returned up to K`
+The model uses these query-item features:
 
-  For example, if 7 of the first 10 results are relevant, Precision@10 is `0.70`. Unlike Hit Rate@K, it reflects how many results are relevant, not just whether there is at least one. Unlike Recall@K, it does not divide by the full set of relevant items.
+- Dense query-item similarity score
+- Token overlap with item name, menu category, and item description
+- Candidate rank from dense retrieval
+- Item rating
 
-  Precision@K is useful for estimating the relevance density of the results users see. It depends on the relevance labels being sufficiently complete: a genuinely suitable food item missing from the labels will be counted as non-relevant.
+The trainer evaluates with `ndcg@10`, uses query-level training and validation groups, and applies early stopping. The resulting model is saved as `api/indexes/xgboost_reranker_model/crave_ai_xgb_reranker.json` and loaded by the API reranking component.
 
-### What are the metrices we use in this project & How We Interpret the Metrics
+To generate ranking features and train the model, install the API dependencies and configure the tokenizer and ONNX model paths. Run these commands from the repository root:
 
-For food search, many items may equally satisfy a query. Unless the labels distinguish quality or preference, we do not assume one qualifying item is inherently more relevant than another.
+```powershell
+python -m pip install -r api/requirements.txt
+$env:CRAVEAI_TOKENIZER_PATH = "C:\path\to\tokenizer.json"
+$env:CRAVEAI_ONNX_MODEL_PATH = "C:\path\to\embedding_model.onnx"
+python -m api.data.extract_ranking_features
+python -m api.model_training_utils.train_xgboost_ranker
+```
 
-- **Precision@k** indicates how many relevant have appreaded in the top k.
-- **Hit Rate@k** indicates how often the first page contains at least one labeled match.
-- **MRR@k** indicates how early the first labeled match appears.
-- **Recall@K** is a retrieval-depth diagnostic: it indicates how much of the labeled candidate set was retrieved, and is more useful at larger K or when the relevant set is reasonably bounded.
+## Evaluation Methodology
 
-## Results with only item description embeddings (test set with top 100 queries)
+The evaluation workflow compares BM25, dense retrieval, RRF, and XGBoost-reranked results at a consistent cutoff of `K=20`. It reports results separately against two relevance signals:
 
-**@K = 10**
-![alt text](image.png)
+- **Related-item labels** (`response_item_ids`) measure agreement with the dataset's known relevant items.
+- **User clicks** (`clicked_item_ids`) provide a behavioral relevance signal.
 
-**@K = 100**
-![alt text](image-1.png)
+The evaluator reports:
 
-## Observations
+- **Hit Rate@K:** how often at least one labeled relevant item appears in the top K.
+- **MRR@K:** how highly the first labeled relevant item is ranked.
+- **Precision@K:** the proportion of returned top-K items that have a relevance label.
+- **Recall@K:** the proportion of labeled relevant items retrieved in the top K.
 
-- MRR at k = 100 and 10 remain almost same, so the search results are consistent, irrespective of the value of k.
-- MRR onlt at BM25 search is 60% while only dense search is 32.54%. However, with RRF, the MRR is ~65%.
-- MRR for based on user past clicked history is too low (3%).
-- recall at k is also too low, this is becuase all the item queries has more than 300 - 400 items. For example: when user searches for Kathal Biryani, there are 435 items in the overall picture items that matches that item name, Hence for this case the recall_at_k is very low.
-- Since ranking based on the items relevancy is not possible in this case hence NDCG (Normalized Discounted Cummulative Gain), is not the correct matrics to use here.
-- We are focusing on the hit rate, which is how many items are among the top k are in the relevat items (for related_items) and items user click on as the metrics to check how the search results are.
-- The hit_rate at k = 100 & 10 shows a very good result with 69% in BM25 and 72 in dense search, and with RRF in place that number goes upto 84% while testing against related_items metrics, how ever for the user clicks, the RRF search search results struggles at 38%.
+Hit Rate and MRR emphasize first-page usefulness and early relevant results. Precision describes the relevance density of the displayed list, while Recall tracks coverage of the available labels. Click-based and related-item results are kept separate because they represent different signals.
 
-## Conclusions after first Iteration
+Run the offline evaluation from the repository root:
 
-- We need to improve the dense search MRR results. Looks like the MRR for dense search is very low cauing the fusion rank to suffer.
+```powershell
+python -m api.evaluate
+```
+
+## Search Experiments and Results
+
+The charts below record the progression from item-description embeddings to richer menu text. Results are reported at the K values shown in each chart; `K=20` is used as the project baseline for first-page comparisons.
+
+### Iteration 1: Semantic Baseline
+
+![Offline evaluation with item-description embeddings at K=10](image.png)
+
+![Offline evaluation with item-description embeddings at K=100](image-1.png)
+
+The initial experiments established BM25, dense retrieval, and RRF baselines against both related-item labels and user clicks. Dense retrieval showed stronger first-result ranking than BM25 in the recorded MRR results, while the comparison highlighted the value of measuring multiple retrieval approaches side by side.
+
+### Iteration 2: Context-Enriched Embeddings
+
+The item representation was expanded to include item name, menu category, restaurant name, and description. In the recorded comparison, dense MRR improved from 31.05% to 57.08%, dense Hit Rate improved from 61% to 79%, and fused Hit Rate@20 improved from 53% to 79%.
+
+![K=20 baseline using enriched item text](image-2.png)
+
+![Evaluation results after enriching item text](image-3.png)
+
+For the enriched-text experiment, the recorded RRF results include MRR@20 of 35%, Hit Rate@20 of 79%, and Recall@20 of 43.43% against related-item labels. Against click labels, the recorded RRF MRR@20 is 21% and Recall@20 is 46%. These measurements provide a baseline for evaluating future ranking improvements.
+
+### Iteration 3: XGBoost Reranking
+
+The XGBoost reranker was added after RRF to learn a stronger ordering from query-item features. The following evaluation covers 100 queries at `K=20`; related-item labels and user-click labels are reported separately. The standout result is MRR@20 of 85.93% and Hit Rate@20 of 90.00% against related-item labels, showing that the reranker consistently moves a labeled match near the top of the results.
+
+![XGBoost reranker evaluation summary for 100 queries at K=20](image-4.png)
+
+#### XGBoost Ranking Results
+
+| Relevance signal | Ranking          |     MRR@20 | Hit Rate@20 |  Recall@20 | Precision@20 |
+| ---------------- | ---------------- | ---------: | ----------: | ---------: | -----------: |
+| Related items    | BM25             |     15.56% |      30.00% |     13.94% |        6.55% |
+| Related items    | Dense            |     57.08% |      89.00% |     52.45% |       25.80% |
+| Related items    | RRF              |     35.44% |      79.00% |     43.43% |       19.95% |
+| Related items    | XGBoost reranked | **85.93%** |  **90.00%** | **59.24%** |   **29.65%** |
+| User clicks      | BM25             |     10.66% |      23.00% |     14.05% |        2.60% |
+| User clicks      | Dense            |     34.03% |      73.00% |     53.52% |        9.60% |
+| User clicks      | RRF              |     21.44% |      67.00% |     46.03% |        8.35% |
+| User clicks      | XGBoost reranked | **51.50%** |  **77.00%** | **60.00%** |   **10.65%** |
+
+Against related-item labels, XGBoost raises RRF MRR@20 from 35.44% to 85.93% and Hit Rate@20 from 79% to 90%. Against click labels, it raises MRR@20 from 21.44% to 51.50%, Hit Rate@20 from 67% to 77%, and Recall@20 from 46.03% to 60%. These gains show that learned query-item reranking substantially improves early relevant-result placement and retrieves more of the available labels.
+
+Precision@20 is 29.65% against related-item labels and 10.65% against click labels. Precision measures the fraction of the top-K results that have a matching label, so at K=20 it includes ranks 11–20 as well as the strongest first ten. When precision is higher at K=10, it indicates that relevant results are concentrated near the top and that the additional positions expand coverage with a lower density of labeled matches. This is a useful ranking tradeoff: MRR and Hit Rate describe strong first-page placement, while Recall captures the additional relevant items surfaced deeper in the list. Click labels are also a narrower behavioral signal than the related-item labels, so the two precision values are interpreted separately.
+
+The current model is query-level; incorporating user-history features is the next step toward personalization.
+
+## Application and Deployment Architecture
+
+- **API:** FastAPI search endpoint backed by the hybrid retrieval and reranking pipeline.
+- **UI:** React and TypeScript application in `ui/`.
+- **Model assets:** ONNX embedding model, tokenizer, search indexes, and XGBoost model are configured separately from application code.
+- **Containerization:** API and UI have independent Docker build contexts and images.
+- **Deployment:** Kubernetes manifests are maintained in `k8s/`, and GitHub Actions workflows build and publish the application images to GHCR.
+
+For local API setup and configuration, see [API.md](API.md).
