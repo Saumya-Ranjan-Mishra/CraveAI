@@ -2,6 +2,11 @@
 
 CraveAI is an end-to-end food-search application combining lexical retrieval, semantic embeddings, reciprocal rank fusion, and a learned XGBoost reranker. It includes a FastAPI backend, a React and TypeScript UI, containerized services, and Kubernetes deployment manifests.
 
+<video controls width="720">
+	<source src="https://raw.githubusercontent.com/Saumya-Ranjan-Mishra/CraveAI/main/CraveAI%20Search.mp4" type="video/mp4">
+	Your browser does not support embedded video. [Watch the demo](<CraveAI Search.mp4>).
+</video>
+
 ## Contents
 
 - [Results at a Glance](#results-at-a-glance)
